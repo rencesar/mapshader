@@ -1,5 +1,13 @@
+import os
+
 import numpy as np
 import psutil
+
+from tile_fetch.core import get_tiles_by_extent
+
+from mapshader.core import render_map
+from mapshader.sources import MapSource
+
 
 def find_and_set_categoricals(df):
     '''
@@ -203,3 +211,68 @@ def psutils_html():
         setInterval(fetchAndPopulate, 2000);
         </script>
     '''
+
+def get_tile(source: MapSource, x=0, y=0, z=0):
+    img = render_map(source, x=int(x), y=int(y), z=int(z), height=256, width=256)
+    return img
+
+
+def get_tiles_in_dir(dir_name, traversed=None, results=None):
+    traversed = set() if traversed is None else traversed
+    results = set() if results is None else results
+    dirs = os.listdir(dir_name)
+    if dirs:
+        for f in dirs:
+            new_dir = dir_name + '/' + f
+            if os.path.isdir(new_dir) and new_dir not in traversed:
+                traversed.add(new_dir)
+                get_tiles_in_dir(new_dir, traversed, results)
+            else:
+                results.add(new_dir)
+    return results
+
+
+def save_static_tile(tile_image, file_path):
+    byte_io = tile_image.to_bytesio()
+    directory_path = file_path.split('/')[:-1]
+    directory_path = '/'.join(directory_path) + '/'
+    if not os.path.exists(directory_path):
+        os.makedirs(directory_path)
+    with open(file_path, 'wb') as f:
+        f.write(byte_io.read())
+
+
+def generate_static_tiles(xmin, ymin, xmax, ymax,
+                          levels=[8, ], output_path='.'):
+    '''
+    save a tile to disk based on xmin, ymin, xmax, ymax, level=8, etc.
+
+    Parameters
+    ----------
+    xmin: min x value
+    ymin: min y value
+    xmax: max 
+    output_path: path indicating where tile should be written
+
+    Returns
+    -------
+    output_path: echo of input path
+    '''
+    source = MapSource.from_obj()
+    source.load()
+    directory_map = get_tiles_in_dir(output_path)
+    for level in levels:
+        for tile in get_tiles_by_extent(xmin, ymin, xmax, ymax, level):
+            x, y, level = tile
+            try:
+                if str(y) not in directory_map[str(level)][str(x)]:
+                    raise NotImplemented
+                continue
+            except:
+                pass
+            file_path = '{output_path}/{level}/{x}/{y}'.format(
+                output_path=output_path, level=level, x=x, y=y
+            )
+            tile_image = get_tile(source, x, y, level)
+            save_static_tile(tile_image, file_path)
+    return output_path
